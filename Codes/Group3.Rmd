@@ -1,0 +1,480 @@
+---
+title: "Biomed_final"
+author: "Tianran Zhang"
+date: "4/6/2020"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+rm(list = ls())
+library(table1)
+library(ggpubr)
+library(ggmosaic)
+# Effect displays for GLM and more
+library(effects)
+library(ROCR)
+library(pROC)
+
+library(ordinal)
+library(MASS)
+
+library(nnet)
+```
+
+# Load the data
+
+```{r}
+load("./covariates.RData")
+load("./Disease.RData")
+
+dat <- merge(x = full_data, y = disease[c("SEQN", "bp", "bi", "cd")], 
+             by = "SEQN", all = TRUE)
+
+dat <- dat[complete.cases(dat), ]
+dat$ncd <- dat$bp == 1 | dat$bi == 1 | dat$cd == 1
+
+dat <- dat[dat$ALQ151 != "Don't know", ]
+dat <- dat[dat$DBQ700 != "Don't know", ]
+dat$ALQ151 <- factor(dat$ALQ151)
+dat$SLQ050 <- factor(dat$SLQ050)
+dat$DBQ700 <- factor(dat$DBQ700)
+
+dat$DBQ700 = relevel(dat$DBQ700, ref = "Excellent")
+dat$ALQ151 = relevel(dat$ALQ151, ref = "Yes")
+dat$SLQ050 = relevel(dat$SLQ050, ref = "Yes")
+
+head(dat)
+```
+
+
+# Data Summary
+## Numerically Summary
+```{r}
+dat$ncd_p <- factor(dat$ncd, levels = c("TRUE", "FALSE", "P"), labels = c("TRUE", "FALSE", "P-value"))
+
+rndr <- function(x, name, ...){
+  if (length(x) == 0){
+    y <- dat[[name]]
+    s <- rep("", length(render.default(x = y, name = name)))
+    if (is.numeric(y)){
+      p <- t.test(y ~ dat$ncd_p)$p.value
+    } else{
+      p <- chisq.test(table(y, droplevels(dat$ncd_p)))$p.value
+    }
+    s[2] <- sub("<", "&lt;", format.pval(p, digits = 3, eps = 0.001))
+    s
+  } else{
+    render.default(x = x, name = name, ...)
+  }
+}
+
+rndr.strat <- function(label, n, ...){
+  ifelse(n == 0, label, render.strat.default(label, n, ...))
+}
+
+table1(~ DBQ700 + ALQ120Q + ALQ151 + DR1TVC + DR1TCAFF + SLD012 + SLQ050 + 
+         SMD030 + WHD020 + bmi| ncd_p, data = dat, droplevels = F, 
+       render = rndr, render.strat = rndr.strat, overall = F)
+
+```
+
+
+
+## Graphical Summary
+**Continuous Variable**: ALQ120Q, DR1TVC, DR1TCAFF, SLD012, SMD030, WHD020, bmi   
+(Draw Boxplots for the continuous variables)
+```{r}
+ggboxplot(data = dat, x = "ncd", y = "ALQ120Q", add = "jitter", color = "ncd") + 
+  theme(legend.position = "none") + 
+  xlab("Having one or more diseases") +
+  ylab("How often drink alcohol over past 12 mos") +
+  stat_compare_means(method = "anova", label.x.npc = "center", label.y.npc = "top")
+ggboxplot(data = dat, x = "ncd", y = "DR1TVC", add = "jitter", color = "ncd")+
+  theme(legend.position = "none") + 
+  xlab("Having one or more diseases") +
+  ylab("Vitamin C (mg)") +
+  stat_compare_means(method = "anova", label.x.npc = "center", label.y.npc = "top")
+ggboxplot(data = dat, x = "ncd", y = "DR1TCAFF", add = "jitter", color = "ncd")+
+  theme(legend.position = "none") +
+  xlab("Having one or more diseases") +
+  ylab("Caffeine (mg)") +
+  stat_compare_means(method = "anova", label.x.npc = "center", label.y.npc = "top")
+ggboxplot(data = dat, x = "ncd", y = "SLD012", add = "jitter", color = "ncd")+
+  theme(legend.position = "none") + 
+  xlab("Having one or more diseases") +
+  ylab("Sleep hours") +
+  stat_compare_means(method = "anova", label.x.npc = "center", label.y.npc = "top")
+ggboxplot(data = dat, x = "ncd", y = "SMD030", add = "jitter", color = "ncd")+
+  theme(legend.position = "none") + 
+  xlab("Having one or more diseases") +
+  ylab("Age started smoking cigarettes regularly") +
+  stat_compare_means(method = "anova", label.x.npc = "center", label.y.npc = "top")
+ggboxplot(data = dat, x = "ncd", y = "WHD020", add = "jitter", color = "ncd")+
+  theme(legend.position = "none") + 
+  xlab("Having one or more diseases") +
+  ylab("Current self-reported weight (pounds)") +
+  stat_compare_means(method = "anova", label.x.npc = "center", label.y.npc = "top")
+ggboxplot(data = dat, x = "ncd", y = "bmi", add = "jitter", color = "ncd")+
+  theme(legend.position = "none") + 
+  xlab("Having one or more diseases") +
+  ylab("BMI") +
+  stat_compare_means(method = "anova", label.x.npc = "center", label.y.npc = "top")
+```
+
+**Discrete variable** DBQ700, ALQ151, SLQ050, smok_yn
+(Draw Mosaic plots for discrete variables)
+```{r,warning=FALSE}
+pval <- function(p){
+  if (p < 0.001) {
+    return("< 0.001")
+    } else {return(round(p, 3))}
+}
+
+ggplot(data = dat) + 
+  geom_mosaic(aes(x = product(DBQ700, ncd), fill = DBQ700)) +
+  xlab(label = "Having one or more diseases") +
+  ylab(label = "Diet") +
+  theme(legend.position = "none") +
+  geom_text(x = .8, y = .8, 
+            label = paste0("Chisq p ", 
+                           pval(chisq.test(dat$ncd, dat$DBQ700, correct = F)$p.value)))
+ggplot(data = dat) + 
+  geom_mosaic(aes(x = product(ALQ151, ncd), fill = ALQ151)) +
+  xlab(label = "Having one or more diseases") +
+  ylab(label = "Alcohol") +
+  theme(legend.position = "none") +
+  geom_text(x = .8, y = .8, 
+            label = paste0("Chisq p ", 
+                           pval(chisq.test(dat$ncd, dat$ALQ151, correct = F)$p.value)))
+ggplot(data = dat) + 
+  geom_mosaic(aes(x = product(SLQ050, ncd), fill = SLQ050)) +
+  xlab(label = "Having one or more diseases") +
+  ylab(label = "Having trouble sleeping") +
+  theme(legend.position = "none") +
+  geom_text(x = .8, y = .8, 
+            label = paste0("Chisq p ", 
+                           pval(chisq.test(dat$ncd, dat$SLQ050, correct = F)$p.value)))
+```
+
+
+# Test 
+**Continuous Variable**: ALQ120Q, DR1TVC, DR1TCAFF, SLD012, SMD030, WHD020, bmi      
+(Use two sample t-test with two-sided 0.05 significance level to compare the mean level of each variable between two NCDs outcomes)  
+```{r,warning=FALSE}
+t.test(dat$ncd,dat$ALQ120Q)
+t.test(dat$ncd,dat$DR1TVC)
+t.test(dat$ncd,dat$DR1TCAFF)
+t.test(dat$ncd,dat$SLD012)
+t.test(dat$ncd,dat$SMD030)
+t.test(dat$ncd,dat$WHD020)
+t.test(dat$ncd,dat$bmi)
+```
+
+**Discrete variable** DBQ700, ALQ151, SLQ050, smok_yn
+(Use Chi-square tests to compare the proportions of diagnosed with NCDs for each discrete variable)    
+
+```{r,warning=FALSE}
+chisq.test(dat$ncd,dat$DBQ700)
+chisq.test(dat$ncd,dat$ALQ151)
+chisq.test(dat$ncd,dat$SLQ050)
+```
+
+# Generalized Linear Regression  
+## Univariate Regression 
+```{r,message=FALSE}
+# Univariate logistic regression
+colnames(dat) <- c("SEQN","Diet","Alcohol_freq","Alcohol",
+                   "Vitamin_C","Caffeine","Sleep","Trouble_sleep",
+                   "Smoking_age","smok_yn","Weight","BMI","bp","bi","cd","ncd","ncd_p")
+univ = function(var)
+{
+  form = formula(paste0("ncd ~ ", var))
+  logit = glm(form, data = dat, family = "binomial")
+  
+  p = coef(summary(logit))[,4]
+  
+  OR = data.frame(round(exp(cbind(OR = coef(logit), confint(logit))), 3),
+                  p_value = format.pval(p, digits = 3, eps = 0.001))[-1,]
+  colnames(OR) <- c("OR", "2.5%", "97.5%", "p_value")
+  return(OR)
+}
+
+varlist = colnames(dat)[!(colnames(dat) %in% c("SEQN", "bp", "bi", "cd","ncd","smok_yn","ncd_p"))]
+
+table_uni <- do.call(rbind.data.frame, lapply(varlist, univ))
+knitr::kable(table_uni)
+```
+
+# Regression
+## Full Model
+```{r}
+form <- formula(paste0("ncd ~" , paste(varlist, collapse = "+")))
+full <- glm(form, data = dat, family = "binomial")
+
+final <- step(full, direction = "both", trace = 0)
+#summary(final)
+
+p <- coef(summary(final))[,4]
+sum_final <- data.frame(round(exp(cbind(OR = coef(final), confint(final))), 4),
+           p_value = format.pval(p, digits = 3, eps = 0.001))
+colnames(sum_final) <- c("OR", "2.5%", "97.5%", "P-val")
+rownames(sum_final)[1] <- "DietExcellent"
+sum_final[1,]<-c("Ref","","","")
+knitr::kable(sum_final) 
+```
+
+# effect plot
+```{r,fig.height=10,fig.width=15}
+## Effect displays
+plot(allEffects(final))
+```
+
+# ROC plot
+```{r}
+rocplot <- function(truth, pred, ...){
+  predob = prediction(pred, truth)
+  perf = performance(predob, "tpr", "fpr")
+  plot(perf, ...) 
+  area = auc(truth, pred)
+  area = format(round(area, 4), nsmall = 4)
+  text(x = .8, y = .1, labels = paste("AUC = ", area))
+  segments(x0 = 0, y0 = 0, x1 = 1, y1 = 1, col = "gray", lty = 2)
+}
+
+rocplot(dat$ncd, final$fitted.values)
+```
+
+
+
+
+
+# Ordinary
+
+## Data Summary
+### Numerically Summary
+
+```{r}
+dat2 <- dat %>%
+  mutate(ncd = bp + bi + cd)
+dat2$ncd <- factor(dat2$ncd)
+dat2 <- dat2 %>%
+  dplyr::select(-smok_yn, -Weight)
+head(dat2)
+
+```
+
+```{r}
+dat2$ncd_p <- factor(dat2$ncd, levels = 0:4, labels = c(0:3, "P-value"))
+
+rndr2 <- function(x, name, ...){
+  if (length(x) == 0){
+    y <- dat2[[name]]
+    s <- rep("", length(render.default(x = y, name = name)))
+    if (is.numeric(y)){
+      p <- kruskal.test(y ~ dat2$ncd_p)$p.value
+    } else{
+      p <- chisq.test(table(y, droplevels(dat2$ncd_p)))$p.value
+    }
+    s[2] <- sub("<", "&lt;", format.pval(p, digits = 3, eps = 0.001))
+    s
+  } else{
+    render.default(x = x, name = name, ...)
+  }
+}
+
+rndr.strat <- function(label, n, ...){
+  ifelse(n == 0, label, render.strat.default(label, n, ...))
+}
+
+table1(~ Diet+Alcohol+Vitamin_C+Caffeine+Sleep+Trouble_sleep+
+         Smoking_age + BMI| ncd_p, data = dat2, droplevels = F, 
+       render = rndr2, render.strat = rndr.strat, overall = F)
+
+```
+
+
+### Graphical Summary
+**Continuous Variable**: Alcohol_freq, Vitamin_C, Caffeine, Sleep, Smoking_age, BMI
+(Draw Boxplots for the continuous variables)
+```{r}
+ggboxplot(data = dat2, x = "ncd", y = "Alcohol_freq", add = "jitter", color = "ncd") + 
+  theme(legend.position = "none") + 
+  xlab("Having one or more diseases") +
+  ylab("How often drink alcohol over past 12 mos") +
+  stat_compare_means(method = "anova", label.x.npc = "center", label.y.npc = "top")
+ggboxplot(data = dat2, x = "ncd", y = "Vitamin_C", add = "jitter", color = "ncd")+
+  theme(legend.position = "none") + 
+  xlab("Having one or more diseases") +
+  ylab("Vitamin C (mg)") +
+  stat_compare_means(method = "anova", label.x.npc = "center", label.y.npc = "top")
+ggboxplot(data = dat2, x = "ncd", y = "Caffeine", add = "jitter", color = "ncd")+
+  theme(legend.position = "none") +
+  xlab("Having one or more diseases") +
+  ylab("Caffeine (mg)") +
+  stat_compare_means(method = "anova", label.x.npc = "center", label.y.npc = "top")
+ggboxplot(data = dat2, x = "ncd", y = "Sleep", add = "jitter", color = "ncd")+
+  theme(legend.position = "none") + 
+  xlab("Having one or more diseases") +
+  ylab("Sleep hours") +
+  stat_compare_means(method = "anova", label.x.npc = "center", label.y.npc = "top")
+ggboxplot(data = dat2, x = "ncd", y = "Smoking_age", add = "jitter", color = "ncd")+
+  theme(legend.position = "none") + 
+  xlab("Having one or more diseases") +
+  ylab("Age started smoking cigarettes regularly") +
+  stat_compare_means(method = "anova", label.x.npc = "center", label.y.npc = "top")
+# ggboxplot(data = dat2, x = "ncd", y = "Weight", add = "jitter", color = "ncd")+
+#   theme(legend.position = "none") + 
+#   xlab("Having one or more diseases") +
+#   ylab("Current self-reported weight (pounds)") +
+#   stat_compare_means(method = "anova", label.x.npc = "center", label.y.npc = "top")
+ggboxplot(data = dat2, x = "ncd", y = "BMI", add = "jitter", color = "ncd")+
+  theme(legend.position = "none") + 
+  xlab("Having one or more diseases") +
+  ylab("BMI") +
+  stat_compare_means(method = "anova", label.x.npc = "center", label.y.npc = "top")
+```
+
+**Discrete variable** Diet, Alcohol, Trouble_sleep
+(Draw Mosaic plots for discrete variables)
+```{r,warning=FALSE}
+pval <- function(p){
+  if (p < 0.001) {
+    return("< 0.001")
+    } else {return(round(p, 3))}
+}
+
+ggplot(data = dat2) + 
+  geom_mosaic(aes(x = product(Diet, ncd), fill = Diet)) +
+  xlab(label = "Having one or more diseases") +
+  ylab(label = "Diet") +
+  theme(legend.position = "none") +
+  geom_text(x = .8, y = .8, 
+            label = paste0("Chisq p ", 
+                           pval(chisq.test(dat$ncd, dat$DBQ700, correct = F)$p.value)))
+ggplot(data = dat2) + 
+  geom_mosaic(aes(x = product(Alcohol, ncd), fill = Alcohol)) +
+  xlab(label = "Having one or more diseases") +
+  ylab(label = "Alcohol") +
+  theme(legend.position = "none") +
+  geom_text(x = .8, y = .8, 
+            label = paste0("Chisq p ", 
+                           pval(chisq.test(dat$ncd, dat$ALQ151, correct = F)$p.value)))
+ggplot(data = dat2) + 
+  geom_mosaic(aes(x = product(Trouble_sleep, ncd), fill = Trouble_sleep)) +
+  xlab(label = "Having one or more diseases") +
+  ylab(label = "Having trouble sleeping") +
+  theme(legend.position = "none") +
+  geom_text(x = .8, y = .8, 
+            label = paste0("Chisq p ", 
+                           pval(chisq.test(dat$ncd, dat$SLQ050, correct = F)$p.value)))
+```
+
+
+## Test 
+**Continuous Variable**: ALQ120Q, DR1TVC, DR1TCAFF, SLD012, SMD030, WHD020, bmi      
+(Use two sample t-test with two-sided 0.05 significance level to compare the mean level of each variable between two NCDs outcomes)  
+```{r,warning=FALSE}
+kruskal.test(dat2$ncd,dat2$Alcohol_freq)
+kruskal.test(dat2$ncd,dat2$Vitamin_C)
+kruskal.test(dat2$ncd,dat2$Caffeine)
+kruskal.test(dat2$ncd,dat2$Sleep)
+kruskal.test(dat2$ncd,dat2$Smoking_age)
+# kruskal.test(dat2$ncd,dat2$Weight)
+kruskal.test(dat2$ncd,dat2$BMI)
+```
+
+**Discrete variable** DBQ700, ALQ151, SLQ050, smok_yn
+(Use Chi-square tests to compare the proportions of diagnosed with NCDs for each discrete variable)    
+
+```{r,warning=FALSE}
+chisq.test(dat2$ncd,dat2$Diet)
+chisq.test(dat2$ncd,dat2$Alcohol)
+chisq.test(dat2$ncd,dat2$Trouble_sleep)
+```
+
+## For each covariate fit the univariate logistic model.
+### Check the proportional odds assumption
+```{r}
+# Check the Proportional odds assumption for each variable
+
+varlist2 <- colnames(dat2)[!(colnames(dat2) %in% c("SEQN", "bp", "bi", "cd", "ncd", "ncd_p"))]
+prop_test <- data.frame()
+for (var in varlist2){
+  form = formula(paste0("ncd ~ ", var))
+  logit = clm(form, data = dat2)
+  a = scale_test(logit)$`Pr(>Chi)`[2]
+  b = nominal_test(logit)$`Pr(>Chi)`[2]
+  OR = data.frame(round(exp(cbind(OR = coef(logit)[4], confint(logit))), 3))
+  p1 <- cbind(OR, p_val = coef(summary(logit))[-1:-3, 4] < 0.05, 
+              satisfy_normality = a > 0.05,
+              satisfy_effect = b > 0.05)
+  prop_test <- rbind(prop_test, p1)
+}
+prop_test
+```
+
+All other variables are violated the PH assumption.
+
+
+## Univariate
+```{r}
+comby <- function(y, j){
+  ans <- data.frame()
+  for (i in 1:3){
+    ans <- rbind(ans, y[,,i][j, ])
+  }
+  ans
+}
+
+comb <- function(x, y){
+  ans <- data.frame()
+  i = 3
+  for (i in 2:ncol(x)){
+    ans1 <- cbind(x[, i], comby(y, i))
+    colnames(ans1) <- c("OR", "2.5%", "97.5%")
+    rownames(ans1) <- paste0(colnames(x)[i], 1:3)
+    ans <- rbind(ans, ans1)
+  }
+  ans
+}
+
+univ <- function(var){
+  form = formula(paste0("ncd ~ ", var))
+  multi = multinom(form, data = dat2)
+  comb(exp(coef(multi)), exp(confint(multi)))
+}
+
+t<- round(do.call(rbind.data.frame, lapply(varlist2, univ)), 3)
+knitr::kable(t)
+```
+
+
+```{r}
+form2 <- formula(paste0("ncd ~" , paste(varlist2, collapse = "+")))
+full2 <- clm(ncd ~ Diet + Alcohol + Vitamin_C + Caffeine + 
+    Sleep + Trouble_sleep + Smoking_age + BMI, data = dat2)
+
+final2 <- step(full2, direction = "both", trace = 0)
+sum_final2 <- round(cbind(exp(coef(final2)[4:12]), exp(confint(final2))),3)
+colnames(sum_final2)[1] <- "OR"
+DietExcellent<-c("Ref","","")
+sum_final2<-rbind(DietExcellent,sum_final2)
+knitr::kable(sum_final2)
+# FYI, Interaction: Not significant
+```
+
+
+# effect plot
+```{r,fig.height=10,fig.width=15}
+## Effect displays
+plot(allEffects(full2))
+```
+
+# ROC plot
+```{r}
+multiclass.roc(dat2$ncd, final2$fitted.values)
+```
+

@@ -1,0 +1,131 @@
+---
+title: "Final_Project_Exploration"
+author: "Jack Rossi"
+date: "March 19, 2020"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+#install.packages('nhanesA')
+library('nhanesA')
+```
+
+## Defining Smoking
+
+SMD030 - "How old {were you/was SP} when {you/s/he} last smoked cigarettes {fairly regularly}?"
+
+SMQ040 {Do you/Does SP} now smoke cigarettes?
+
+```{r}
+
+smok <- nhanes('SMQ_I')
+smok$SMQ040c <- smok$SMQ040
+smok <- nhanesTranslate('SMQ_I', 'SMQ040', data=smok)
+smok <- smok[,c("SEQN","SMD030", "SMQ040", "SMQ040c")]
+
+smok$smok_yn = !is.na(smok$SMD030) 
+
+```
+
+## Defining Bodyweights
+
+WHD020 - "How much {do you/does SP} weigh without clothes or shoes?"
+
+WHD120 - "How much did {you/SP} weigh at age 25?  [If you don't know {your/his/her} exact weight, please make "
+
+WHD130 - "How tall {were you/was SP} at age 25?  [If you don't know {your/his/her} exact height, please make y"
+
+```{r}
+
+wgt <- nhanes('WHQ_I') 
+wgt <- wgt[, c("SEQN", "WHD020", "WHD120", "WHD130")]
+
+wgt$bmi <- (wgt$WHD020 * 0.453592) / (wgt$WHD130 * 0.0254)^2
+
+attr(wgt$bmi, 'label') <- "ratio of weight in kg to height in meters"
+
+```
+
+## Alcohol Use
+
+```{r}
+
+alc <- nhanes("ALQ_I")
+alc <- nhanesTranslate('ALQ_I','ALQ151', data=alc)
+alc <- alc[,c('SEQN', 'ALQ120Q', 'ALQ151')]
+```
+
+## Sleep Habits
+
+```{r}
+sleep <- nhanes("SLQ_I")
+sleep <- nhanesTranslate('SLQ_I', 'SLQ050', data = sleep)
+sleep <- sleep[,c("SEQN", "SLD012", "SLQ050")]
+attr(sleep$SLQ050, 'label') = "ever told a doctor you had trouble sleeping?"
+```
+
+## Diet
+
+```{r}
+diet <- nhanes('DBQ_I')
+diet <- nhanesTranslate('DBQ_I', 'DBQ700', data = diet)
+diet <- diet[,c("SEQN", "DBQ700")]
+```
+
+## Nutrients - Vitamin C and Caffeine
+
+```{r}
+nutr <- nhanes("DR1TOT_I")
+
+nutr <- nutr[, c("SEQN","DR1TVC","DR1TCAFF")]
+
+```
+
+# Joining all data together
+
+```{r}
+
+full_data <- merge(x = diet ,y = alc ,by="SEQN", all = TRUE)
+full_data <- merge(x = full_data, y = nutr, by = "SEQN", all = TRUE)
+full_data <- merge(x = full_data, y = sleep, by = "SEQN", all = TRUE)
+full_data <- merge(x = full_data, y = smok, by = "SEQN", all = TRUE)
+full_data <- merge(x = full_data, y = wgt, by = "SEQN", all = TRUE)
+
+sum(complete.cases(full_data))
+
+head(rowSums(is.na(full_data)))
+colSums(is.na(full_data))
+
+save(full_data, file = "Cov.RData")
+
+```
+
+## Defining Hypertension (High Blood Pressure)
+
+BPQ035 - "How old {were you/was SP} when {you were/he/she was} first told that {you/he/she} had hypertension o"
+
+BPQ020 - "{Have you/Has SP} ever been told by a doctor or other health professional that {you/s/he} had hypert"
+
+BPQ030 - "{Were you/Was SP} told on 2 or more different visits that {you/s/he} had hypertension, also called h[igh blood pressure]"
+
+
+BPQ080 - "{Have you/Has SP} ever been told by a doctor or other health professional that {your/his/her} blood [cholesterol is high]?"
+
+
+```{r}
+
+bp <- nhanes("BPQ_I")
+bp$BPQ020c <- bp$BPQ020
+bp$BPQ030c <- bp$BPQ030
+bp$BPQ080c <- bp$BPQ080
+
+bp <- nhanesTranslate('BPQ_I', c('BPQ080', "BPQ030", "BPQ020"), data=bp)
+
+bp <- bp[, c("SEQN", "BPD035", 'BPQ080', "BPQ030", "BPQ020", 'BPQ080c', "BPQ030c", "BPQ020c")]
+
+```

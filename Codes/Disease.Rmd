@@ -1,0 +1,87 @@
+---
+title: "Final_Project_Exploration"
+author: "Jack Rossi"
+date: "March 19, 2020"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+library('nhanesA')
+```
+
+## Disease  
+
+```{r}
+# get the hypertension data
+bp <- nhanes("BPQ_I")
+bp$BPQ020c <- bp$BPQ020
+bp$BPQ030c <- bp$BPQ030
+bp$BPQ080c <- bp$BPQ080
+
+bp <- nhanesTranslate('BPQ_I', c('BPQ080', "BPQ030", "BPQ020"), data=bp)
+
+bp <- bp[, c("SEQN", "BPD035", 'BPQ080', "BPQ030", "BPQ020", 'BPQ080c', "BPQ030c", "BPQ020c")]
+
+sum(!is.na(bp$BPD035))
+sum(bp$BPQ080=="Yes")
+
+# BPQ035 - "How old {were you/was SP} when {you were/he/she was} first told that {you/he/she} had hypertension o"
+
+# BPQ020 - "{Have you/Has SP} ever been told by a doctor or other health professional that {you/s/he} had hypert"
+
+# BPQ030 - "{Were you/Was SP} told on 2 or more different visits that {you/s/he} had hypertension, also called h[igh blood pressure]"
+
+# BPQ080 - "{Have you/Has SP} ever been told by a doctor or other health professional that {your/his/her} blood [cholesterol is high]?"
+
+# get the diabetes data
+di <- nhanes("DIQ_I")
+di$DIQ010c <- di$DIQ010
+di$DID040c <- di$DID040
+di$DIQ160c <- di$DIQ160
+
+di <- nhanesTranslate('DIQ_I', c('DIQ010', "DID040", "DIQ160"), data=di)
+
+di <- di[, c("SEQN", "DIQ010", 'DID040', "DIQ160", "DIQ010c", 'DID040c', "DIQ160c")]
+# DIQ010 - Doctor told you have diabetes
+
+# DID040 - Age when first told you had diabetes
+
+# DIQ160 - Ever told you have prediabetes
+
+# get the chronic respiratory diseases data
+# The Respiratory Disease Section (variable name prefix RDQ) provides interview data for respiratory symptoms that may be related to chronic bronchitis or asthma. The symptoms profiled include cough, phlegm production, and wheezing.
+
+# get the Cardiovascular Disease 
+
+# Grade 1 Angina is defined as CDQ001 = 1 and CDQ002 = 1 (but CDQ003 ??? 1) and CDQ004 = 1 and CDQ005 = 1 and CDQ006 = 1, plus either (CDQ009D = 4 or CDQ009E = 5) or (CDQ009F = 6 and CDQ009G = 7). 
+
+# Grade 2 Angina is defined as CDQ001 = 1 and CDQ002 = 1 and CDQ003 = 1 and CDQ004 = 1 and CDQ005 = 1 and CDQ006 = 1, plus either (CDQ009D = 4 or CDQ009E = 5) or (CDQ009F = 6 and CDQ009G = 7). 
+
+cd <- nhanes("CDQ_I")
+
+cd <- cd[, c('CDQ001', "CDQ002", "CDQ004", "CDQ005", "CDQ006", "CDQ009D", "CDQ009E", "CDQ009F", "CDQ009G", "CDQ008")]
+
+library(tidyverse)
+cd <- cd %>%
+  mutate(angina1=CDQ001+CDQ002+CDQ004+CDQ005+CDQ006+CDQ009D+CDQ009E) %>%
+  mutate(angina2=CDQ001+CDQ002+CDQ004+CDQ005+CDQ006+CDQ009F+CDQ009G)
+
+
+
+# CDQ001 - SP ever had pain or discomfort in chest
+# CDQ002 - SP get it walking uphill or in a hurry
+# CDQ003 - During an ordinary pace on level ground
+# CDQ004 - If so does SP continue or slow down
+# CDQ005 - Does standing relieve pain/discomfort
+# CDQ006 - How soon is the pain relieved
+# CDQ009A - Pain in right arm
+# CDQ009B - Pain in right chest
+# CDQ009C - Pain in neck
+# CDQ009D - Pain in upper sternum
+# CDQ008 - Severe pain in chest more than half hour
+```
